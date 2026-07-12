@@ -1,6 +1,6 @@
 # Task Scheduler Usage Guide
 
-This project includes a high-performance task scheduler, supporting large-scale concurrency, persistence, one-time, recurring, and scheduled tasks. It is suitable for enterprise and personal backend services requiring scheduled or asynchronous jobs.
+This project includes a lightweight in-memory task scheduler for one-time, recurring, scheduled, and long-lived connection tasks in a single service instance.
 
 ## Features
 - Supports one-time, recurring, scheduled, and persistent tasks
@@ -11,10 +11,20 @@ This project includes a high-performance task scheduler, supporting large-scale 
 - Detailed logging and status tracking
 
 ## Task Types
-- **OneTime**: One-time task, automatically deleted after execution
+- **OneTime**: Executes immediately once and retains its result status
 - **Recurring**: Recurring task, executed repeatedly at fixed intervals
 - **Scheduled**: Scheduled task, executed at a specified time
-- **Persistent**: Persistent task, suitable for long-running jobs
+- **Persistent**: Starts once and keeps running, suitable for WebSocket clients, message consumers, and other long-lived connections. Removing the task or stopping the scheduler aborts it
+
+A recurring task schedules its next run after the current execution completes, so the same task never overlaps itself. A persistent task starts once and normally remains `running`; it does not consume the semaphore slots reserved for transient jobs.
+
+## Status and Time
+
+- Status values are `pending`, `running`, `completed`, `failed`, and `cancelled`
+- `created_at`, `last_run`, and `next_run` use UTC
+- Scheduled tasks use the requested time and execute only once
+- One-time tasks retain their final status
+- Failed executions retry after one second until `max_retries` is exhausted
 
 ## Task Executor (TaskExecutor)
 Each task type requires an executor. Implement the `TaskExecutor` trait to define your own logic.
@@ -65,7 +75,6 @@ let task_id = scheduler.add_recurring_task(
     60, // Every 60s
     "my_executor".to_string(),
     None,
-    Some(2), // Max 2 concurrent
     Some(20), // Timeout 20s
     3, // Max 3 retries
 ).await;
@@ -85,7 +94,6 @@ let task_id = scheduler.add_persistent_task(
     "Persistent Task".to_string(),
     "my_executor".to_string(),
     None,
-    Some(1),
 ).await;
 ```
 
@@ -111,12 +119,26 @@ scheduler.remove_task(&task_id).await;
 scheduler.execute_task_now(&task_id).await;
 ```
 
+## HTTP API
+
+Scheduler endpoints require a Bearer token and the listed permission:
+
+- `GET /scheduler/tasks`: `scheduler:read`
+- `GET /scheduler/tasks/{id}`: `scheduler:read`
+- `POST /scheduler/tasks`: `scheduler:write`
+- `POST /scheduler/tasks/{id}/run`: `scheduler:write`
+- `DELETE /scheduler/tasks/{id}`: `scheduler:write`
+
+`task_type` accepts `one_time`, `recurring`, `scheduled`, or `persistent`. Recurring tasks require a positive `interval_seconds`; scheduled tasks require `next_run` as a UTC RFC 3339 timestamp. See the [API guide](api.md) for full request examples.
+
 ## Notes
 - `executor_type` must match the registered executor name
 - Scheduler is thread-safe (Arc+RwLock), can be shared across threads/tasks
 - Task data can use serde_json::Value for custom parameters
 - It is recommended that all task logic be idempotent to avoid side effects from retries
+- Persistent executors must be cancellation-safe so dropping their future releases connections and other resources
+- Task state is currently in memory and is not restored after a process restart
 - Use logging and tracing for troubleshooting
 
 ---
-For advanced usage (e.g., persistence, distributed scheduling), refer to the source code for extension. 
+Database-backed recovery and distributed scheduling can be added behind the task repository and executor boundaries.

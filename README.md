@@ -2,6 +2,8 @@
 
 > [中文文档请见 docs/README.zh-CN.md](docs/README.zh-CN.md)
 
+Documentation: [API](docs/api.md) · [Scheduler](docs/scheduler_usage.md)
+
 This project is a Rust web backend template based on [axum](https://github.com/tokio-rs/axum), suitable for quickly building modern web services. It is ready to use and integrates common backend capabilities.
 
 ## Features
@@ -10,6 +12,7 @@ This project is a Rust web backend template based on [axum](https://github.com/t
 - 🗄️ **Database connection** (powered by sea-orm, supports SQLite/MySQL/Postgres, etc.)
 - 📧 **Email sending** (async SMTP support)
 - ⏰ **Task scheduling** (supports concurrency, one-time/recurring/persistent tasks)
+- 🧪 **Common APIs** (health check, RBAC auth, system config, task CRUD, scheduler management)
 - 🧩 Clear structure, easy to extend
 - 🦀 100% Rust ecosystem
 
@@ -44,13 +47,21 @@ axum_template/
    cargo run
    ```
 4. **Access APIs**
-   - See implementations in `src/api/`.
+   - Health check: `GET /health`
+   - App info: `GET /app-info`
+   - User auth: `POST /user/register`, `POST /user/login`, `POST /user/logout`, `GET /user/me`
+   - System config: `GET /system-config`, `GET/POST/PUT/DELETE /system-config/{key}`
+   - Task CRUD: `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`
+   - Scheduler tasks: `GET/POST /scheduler/tasks`, `GET/DELETE /scheduler/tasks/{id}`, `POST /scheduler/tasks/{id}/run`
 
 ## Main Features
 
 ### 1. Database Connection
 - Uses `sea-orm` as ORM, supports multiple databases.
 - Config in `config.ini`, models in `src/model/`.
+- Creates users, RBAC, sessions, tasks, and system config tables automatically on startup for quick local use.
+- For SQLite file URLs, startup enables read/write/create mode, so a missing database file is created automatically.
+- Initialization is transactional and idempotent. It seeds roles, permissions, and default system configuration without overwriting existing values.
 
 ### 2. Email Sending
 - Uses `lettre`, supports async SMTP mail.
@@ -60,9 +71,23 @@ axum_template/
 - Built-in high-performance scheduler, supports:
   - One-time tasks
   - Recurring tasks
+  - Scheduled tasks
   - Persistent tasks
   - Concurrency, timeout, retry
 - See `src/scheduler/task_scheduler.rs` for details.
+
+### 4. API Response and Error Shape
+- New APIs use a unified JSON response:
+  ```json
+  { "success": true, "message": "ok", "data": {} }
+  ```
+- API errors return an HTTP status code plus the same response envelope.
+
+### 5. Authentication and Permissions
+- Login returns a 24-hour Bearer token. Send it as `Authorization: Bearer <token>`.
+- The first registered user receives the `admin` role; later users receive the `user` role.
+- Protected handlers declare permissions with typed extractors such as `Required<SystemConfigRead>`.
+- Permission markers are centralized in `src/api/auth.rs`, keeping HTTP authorization separate from business services.
 
 ## Use Cases
 - Rapid development of enterprise/personal web backend services

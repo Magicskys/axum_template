@@ -1,7 +1,7 @@
+use crate::config::Config;
 use anyhow::Result;
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
-use crate::config::Config;
 
 pub async fn send_mail_with_config(
     config: Config,
@@ -9,8 +9,6 @@ pub async fn send_mail_with_config(
     subject: &str,
     body: &str,
 ) -> Result<()> {
-
-    
     tracing::debug!("Send Mail: {:?}", config);
     let smtp_server = &config.smtp_server;
     let smtp_port = config.smtp_port;
@@ -32,4 +30,4 @@ pub async fn send_mail_with_config(
 
     mailer.send(email).await?;
     Ok(())
-} 
+}

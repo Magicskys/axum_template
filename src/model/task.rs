@@ -1,4 +1,4 @@
-// Here we will put the sea-orm scheduled task entity in the future 
+// Here we will put the sea-orm scheduled task entity in the future
 
 use sea_orm::entity::prelude::*;
 
@@ -21,4 +21,4 @@ impl RelationTrait for Relation {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {} 
+impl ActiveModelBehavior for ActiveModel {}

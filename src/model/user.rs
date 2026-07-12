@@ -7,6 +7,12 @@ pub struct Model {
     pub id: i32,
     pub username: String,
     pub password_hash: String,
+    pub email: Option<String>,
+    pub is_active: bool,
+    pub created_at: Option<DateTimeUtc>,
+    pub updated_at: Option<DateTimeUtc>,
+    pub last_login_at: Option<DateTimeUtc>,
+    pub last_login_ip: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]
@@ -18,4 +24,4 @@ impl RelationTrait for Relation {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {} 
+impl ActiveModelBehavior for ActiveModel {}
