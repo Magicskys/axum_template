@@ -52,12 +52,26 @@ axum_template/
    - 任务 CRUD：`GET/POST /tasks`、`GET/PUT/DELETE /tasks/{id}`
    - 调度任务：`GET/POST /scheduler/tasks`、`GET/DELETE /scheduler/tasks/{id}`、`POST /scheduler/tasks/{id}/run`
 
+不启动服务而创建管理员账户：
+
+```bash
+cargo run -- create-admin [--username admin] [--password 'your-password']
+```
+
+用户名默认是 `admin`；省略密码时会自动生成 20 位字母数字密码，并仅在终端打印一次。
+
+单次启动时覆盖 HTTP 监听地址：
+
+```bash
+cargo run -- --bind-ip 127.0.0.1 --port 3000
+```
+
 ## 主要功能说明
 
 ### 1. 数据库连接
 - 使用 `sea-orm` 作为 ORM 框架，支持多种数据库。
 - 配置见 `config.ini`，模型见 `src/model/`。
-- 启动时会自动创建用户、RBAC、会话、任务和系统配置表，方便本地快速运行。
+- 启动时会执行版本化的 SeaORM Migration，自动创建或升级用户、会话、任务和系统配置表。
 - SQLite 文件不存在时会自动以读写创建模式生成新数据库。
 - 初始化在事务中执行且可重复运行；默认角色、权限和系统配置只补充缺失数据，不覆盖已有值。
 

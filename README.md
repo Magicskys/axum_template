@@ -22,6 +22,7 @@ This project is a Rust web backend template based on [axum](https://github.com/t
 axum_template/
 ├── src/
 │   ├── api/         # Routes and APIs
+│   ├── migration/   # Versioned database migrations
 │   ├── model/       # Database models
 │   ├── service/     # Business logic
 │   ├── utils/       # Utilities (e.g. mail)
@@ -54,14 +55,28 @@ axum_template/
    - Task CRUD: `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`
    - Scheduler tasks: `GET/POST /scheduler/tasks`, `GET/DELETE /scheduler/tasks/{id}`, `POST /scheduler/tasks/{id}/run`
 
+To create an administrator without starting the server:
+
+```bash
+cargo run -- create-admin [--username admin] [--password 'your-password']
+```
+
+The username defaults to `admin`; omitting the password generates a 20-character alphanumeric password and prints it once in the terminal.
+
+Override the HTTP listener for one run:
+
+```bash
+cargo run -- --bind-ip 127.0.0.1 --port 3000
+```
+
 ## Main Features
 
 ### 1. Database Connection
 - Uses `sea-orm` as ORM, supports multiple databases.
 - Config in `config.ini`, models in `src/model/`.
-- Creates users, RBAC, sessions, tasks, and system config tables automatically on startup for quick local use.
+- Runs versioned SeaORM migrations on startup to create and upgrade users, sessions, tasks, and system config tables.
 - For SQLite file URLs, startup enables read/write/create mode, so a missing database file is created automatically.
-- Initialization is transactional and idempotent. It seeds roles, permissions, and default system configuration without overwriting existing values.
+- RBAC initialization and default system configuration seeding are idempotent and do not overwrite existing values.
 
 ### 2. Email Sending
 - Uses `lettre`, supports async SMTP mail.

@@ -15,9 +15,9 @@ Responses use `{"success":true,"message":"ok","data":{}}`. Errors use HTTP `400`
 - `POST /user/login` (public): returns a 24-hour Bearer token and records the TCP peer IP
 - `GET /user/me` (authenticated): returns profile, audit fields, last login IP, and permissions
 - `POST /user/logout` (authenticated): invalidates the current token
-- `PUT /user/{id}/roles` (`user:manage`): replaces roles with `{"roles":["admin","user"]}`
+- `PUT /user/{id}/role` (`user:manage`): replaces the primary role with `{"role":"admin"}`
 
-The first user becomes an administrator. The last admin role cannot be removed.
+The first user becomes an administrator. SeaORM RBAC assigns one primary role per user, and the last admin role cannot be removed.
 
 ## Tasks
 
@@ -45,4 +45,4 @@ Create or update with `{"content":"text or serialized JSON"}`.
 - `GET /health`: public
 - `GET /app-info`: `system_config:read`
 
-Permission markers live in `src/api/auth.rs`. Add `Required<PermissionType>` to a handler to perform authentication and authorization before business logic runs.
+Permission markers live in `src/api/auth.rs`. SeaORM RBAC stores them in its `sea_orm_*` tables under the logical `api` resource. Add `Required<PermissionType>` to a handler to perform authentication and authorization before business logic runs.

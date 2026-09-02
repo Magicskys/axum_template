@@ -47,7 +47,7 @@ pub async fn register_user(
         ..Default::default()
     };
     let user = new_user.insert(db).await?;
-    crate::service::auth::assign_registration_role(db, user.id).await?;
+    crate::service::rbac::assign_registration_role(db, user.id).await?;
     // Send mail asynchronously through the scheduler
     let mail_data = json!({
         "to": email,

@@ -10,6 +10,7 @@ use crate::{
 use axum::{
     Json, Router,
     extract::{ConnectInfo, Path, State},
+    http::{HeaderMap, header::USER_AGENT},
     routing::{get, post, put},
 };
 use chrono::{DateTime, Utc};
@@ -52,30 +53,76 @@ struct CurrentUserResponse {
 }
 
 #[derive(Deserialize)]
-struct ReplaceRolesRequest {
-    roles: Vec<String>,
+struct ReplaceRoleRequest {
+    role: String,
 }
 
 async fn login_handler(
     ConnectInfo(remote_addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<ApiResponse<LoginResponse>>, ApiError> {
+    let ip = remote_addr.ip().to_string();
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok());
     let user = service::user::find_user_by_username(&state.db, &payload.username)
         .await
-        .map_err(ApiError::internal)?
-        .ok_or_else(|| ApiError::unauthorized("invalid username or password"))?;
+        .map_err(ApiError::internal)?;
+    let Some(user) = user else {
+        let _ = service::login_log::record(
+            &state.db,
+            None,
+            &payload.username,
+            false,
+            &ip,
+            user_agent,
+            Some("invalid credentials"),
+        )
+        .await;
+        return Err(ApiError::unauthorized("invalid username or password"));
+    };
     if !user.is_active {
+        let _ = service::login_log::record(
+            &state.db,
+            Some(user.id),
+            &payload.username,
+            false,
+            &ip,
+            user_agent,
+            Some("account disabled"),
+        )
+        .await;
         return Err(ApiError::forbidden("user account is disabled"));
     }
     if !service::user::verify_password(&user.password_hash, &payload.password) {
+        let _ = service::login_log::record(
+            &state.db,
+            Some(user.id),
+            &payload.username,
+            false,
+            &ip,
+            user_agent,
+            Some("invalid credentials"),
+        )
+        .await;
         return Err(ApiError::unauthorized("invalid username or password"));
     }
 
-    let (user, token, expires_at) =
-        service::user::record_login(&state.db, user, &remote_addr.ip().to_string())
-            .await
-            .map_err(ApiError::internal)?;
+    let (user, token, expires_at) = service::user::record_login(&state.db, user, &ip)
+        .await
+        .map_err(ApiError::internal)?;
+    let _ = service::login_log::record(
+        &state.db,
+        Some(user.id),
+        &user.username,
+        true,
+        &ip,
+        user_agent,
+        None,
+    )
+    .await;
     Ok(Json(ApiResponse::ok(LoginResponse {
         token,
         token_type: "Bearer",
@@ -140,19 +187,19 @@ async fn logout_handler(
     Ok(Json(ApiResponse::message("logged out")))
 }
 
-async fn replace_roles_handler(
+async fn replace_role_handler(
     State(state): State<AppState>,
     _permission: Required<UserManage>,
     Path(user_id): Path<i32>,
-    Json(payload): Json<ReplaceRolesRequest>,
+    Json(payload): Json<ReplaceRoleRequest>,
 ) -> Result<Json<ApiResponse<()>>, ApiError> {
-    if payload.roles.is_empty() {
-        return Err(ApiError::bad_request("at least one role is required"));
+    if payload.role.trim().is_empty() {
+        return Err(ApiError::bad_request("role is required"));
     }
-    service::auth::replace_roles(&state.db, user_id, &payload.roles)
+    service::rbac::replace_role(&state.db, user_id, payload.role.trim())
         .await
         .map_err(|error| ApiError::bad_request(error.to_string()))?;
-    Ok(Json(ApiResponse::message("user roles updated")))
+    Ok(Json(ApiResponse::message("user role updated")))
 }
 
 pub fn router() -> Router<AppState> {
@@ -161,5 +208,5 @@ pub fn router() -> Router<AppState> {
         .route("/register", post(register_handler))
         .route("/me", get(me_handler))
         .route("/logout", post(logout_handler))
-        .route("/{id}/roles", put(replace_roles_handler))
+        .route("/{id}/role", put(replace_role_handler))
 }

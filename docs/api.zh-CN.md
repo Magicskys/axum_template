@@ -41,13 +41,13 @@ Content-Type: application/json
 
 删除当前会话，原 token 立即失效。
 
-### `PUT /user/{id}/roles`（`user:manage`）
+### `PUT /user/{id}/role`（`user:manage`）
 
 ```json
-{"roles":["admin","user"]}
+{"role":"admin"}
 ```
 
-替换用户角色。系统拒绝移除最后一个管理员。
+替换用户的单个主角色。SeaORM RBAC 每位用户只绑定一个主角色；系统拒绝移除最后一个管理员。
 
 ## 普通任务
 
@@ -112,4 +112,4 @@ Content-Type: application/json
 
 ## 权限扩展
 
-权限码和类型标记位于 `src/api/auth.rs`。新增受保护接口时定义标记，并把 `Required<权限类型>` 放入 handler 参数即可同时完成认证和授权。
+权限码和类型标记位于 `src/api/auth.rs`。权限数据由 SeaORM RBAC 的 `sea_orm_*` 表维护，逻辑资源为 `api`；新增受保护接口时定义标记，并把 `Required<权限类型>` 放入 handler 参数即可同时完成认证和授权。

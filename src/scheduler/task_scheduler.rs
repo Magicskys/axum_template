@@ -9,6 +9,8 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use uuid::Uuid;
 
+crate::define_permissions!(scheduler => [read, write]);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskType {
