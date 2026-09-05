@@ -28,10 +28,18 @@ Users can access their own tasks; `user:manage` permits cross-user access. Creat
 
 ## Scheduler
 
-- `GET /scheduler/tasks`, `GET /scheduler/tasks/{id}`: `scheduler:read`
+- `GET /scheduler/tasks`, `GET /scheduler/tasks/{id}`, `GET /scheduler/tasks/{id}/executions`: `scheduler:read`
 - `POST /scheduler/tasks`, `POST /scheduler/tasks/{id}/run`, `DELETE /scheduler/tasks/{id}`: `scheduler:write`
 
 Task types are `one_time`, `recurring`, `scheduled`, and `persistent`. See [Scheduler Usage](scheduler_usage.md) for lifecycle details.
+
+Creation returns HTTP `400` when `executor_type` is not registered. Task definitions and each execution attempt are persisted in `scheduler_tasks` and `task_executions`; the latter records `running`, `completed`, `failed`, or `cancelled` plus finish time and error.
+
+`GET /scheduler/tasks/{id}/executions` returns newest attempts first, for example:
+
+```json
+{"success":true,"message":"ok","data":[{"id":"...","task_id":"...","attempt":1,"status":"completed","started_at":"2026-09-06T08:00:00Z","finished_at":"2026-09-06T08:00:02Z","error":null}]}
+```
 
 ## System Configuration
 

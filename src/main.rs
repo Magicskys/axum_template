@@ -23,7 +23,6 @@ use std::{
 };
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
-use tracing_subscriber;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -111,6 +110,31 @@ fn generate_password() -> String {
     password
 }
 
+async fn shutdown_signal(scheduler: Arc<TaskScheduler>) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
+    tracing::info!("shutdown signal received");
+    scheduler.stop().await;
+}
+
 async fn user_exists(db: &DatabaseConnection, username: &str) -> anyhow::Result<bool> {
     Ok(crate::model::user::Entity::find()
         .filter(crate::model::user::Column::Username.eq(username))
@@ -149,20 +173,24 @@ async fn main() {
     }
 
     // Initialize the scheduler
-    let scheduler = Arc::new(TaskScheduler::default());
+    let scheduler = Arc::new(TaskScheduler::with_database(db.clone(), 100));
     // Registering the Mail Executor
     scheduler
         .add_executor(Box::new(MailTaskExecutor {
             config: config.clone(),
         }))
         .await;
+    scheduler
+        .restore_tasks()
+        .await
+        .expect("Failed to restore scheduler tasks");
     // Start the scheduler
     scheduler.start().await;
 
     let state = AppState {
         db,
         config,
-        scheduler,
+        scheduler: Arc::clone(&scheduler),
         started_at: Utc::now(),
     };
     let app = api::create_router().with_state(state).layer(
@@ -177,6 +205,7 @@ async fn main() {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal(Arc::clone(&scheduler)))
     .await
     .unwrap();
 }

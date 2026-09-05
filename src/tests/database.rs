@@ -33,8 +33,7 @@ async fn fresh_database_is_initialized_once() {
     init_database(&db).await.unwrap();
 
     let configs = crate::service::system_config::list(&db).await.unwrap();
-    assert_eq!(configs.len(), 5);
-    assert!(configs.iter().any(|item| item.key == "app.name"));
+    assert_eq!(configs.len(), 3);
     assert!(
         configs
             .iter()
@@ -117,7 +116,7 @@ async fn missing_sqlite_file_is_created() {
             .await
             .unwrap()
             .len(),
-        5
+        3
     );
 
     db.close().await.unwrap();

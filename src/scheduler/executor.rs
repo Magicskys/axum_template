@@ -3,6 +3,7 @@ use crate::scheduler::task_scheduler::{Task, TaskExecutor};
 use crate::utils::mail::send_mail_with_config;
 use async_trait::async_trait;
 use serde_json::Value;
+use tokio_util::sync::CancellationToken;
 
 // Mail task executor, supports asynchronous sending of mails.
 pub struct MailTaskExecutor {
@@ -11,7 +12,11 @@ pub struct MailTaskExecutor {
 
 #[async_trait]
 impl TaskExecutor for MailTaskExecutor {
-    async fn execute(&self, task: &Task) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn execute(
+        &self,
+        task: &Task,
+        _cancellation: CancellationToken,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let data = task
             .data
             .as_ref()

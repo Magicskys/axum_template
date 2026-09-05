@@ -71,6 +71,7 @@ Content-Type: application/json
 
 - `GET /scheduler/tasks`：`scheduler:read`
 - `GET /scheduler/tasks/{id}`：`scheduler:read`
+- `GET /scheduler/tasks/{id}/executions`：`scheduler:read`
 - `POST /scheduler/tasks`：`scheduler:write`
 - `POST /scheduler/tasks/{id}/run`：`scheduler:write`
 - `DELETE /scheduler/tasks/{id}`：`scheduler:write`
@@ -90,6 +91,14 @@ Content-Type: application/json
 ```
 
 `task_type` 可为 `one_time`、`recurring`、`scheduled`、`persistent`。Scheduled 使用 `next_run`，Persistent executor 应持续运行直到任务被删除或服务停止。
+
+创建时会校验 `executor_type` 是否已经注册，未注册返回 HTTP `400`。任务定义写入 `scheduler_tasks`，每次执行写入 `task_executions`，其中保存 `running`、`completed`、`failed`、`cancelled` 状态、结束时间和错误信息。
+
+`GET /scheduler/tasks/{id}/executions` 按时间倒序返回执行记录：
+
+```json
+{"success":true,"message":"ok","data":[{"id":"...","task_id":"...","attempt":1,"status":"completed","started_at":"2026-09-06T08:00:00Z","finished_at":"2026-09-06T08:00:02Z","error":null}]}
+```
 
 ## 系统配置
 

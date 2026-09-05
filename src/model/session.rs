@@ -14,13 +14,15 @@ pub struct Model {
     pub revoked_at: Option<DateTimeUtc>,
 }
 
-#[derive(Copy, Clone, Debug, EnumIter)]
-pub enum Relation {}
-
-impl RelationTrait for Relation {
-    fn def(&self) -> RelationDef {
-        panic!("No Relation")
-    }
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::user::Entity",
+        from = "Column::UserId",
+        to = "super::user::Column::Id",
+        on_delete = "Cascade"
+    )]
+    User,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

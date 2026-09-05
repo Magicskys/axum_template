@@ -1,6 +1,6 @@
 # Task Scheduler Usage Guide
 
-This project includes a lightweight in-memory task scheduler for one-time, recurring, scheduled, and long-lived connection tasks in a single service instance.
+This project includes a lightweight database-backed scheduler for one-time, recurring, scheduled, and long-lived connection tasks in a single service instance.
 
 ## Features
 - Supports one-time, recurring, scheduled, and persistent tasks
@@ -8,15 +8,16 @@ This project includes a lightweight in-memory task scheduler for one-time, recur
 - Max concurrency protection (semaphore-based, prevents resource exhaustion)
 - Task timeout and retry mechanism
 - Customizable task executors, async supported
-- Detailed logging and status tracking
+- Persistent task definitions and execution history
+- Panic isolation, graceful shutdown, and status tracking
 
 ## Task Types
 - **OneTime**: Executes immediately once and retains its result status
 - **Recurring**: Recurring task, executed repeatedly at fixed intervals
 - **Scheduled**: Scheduled task, executed at a specified time
-- **Persistent**: Starts once and keeps running, suitable for WebSocket clients, message consumers, and other long-lived connections. Removing the task or stopping the scheduler aborts it
+- **Persistent**: Keeps a connection or consumer running until cancellation. Unexpected returns and failures are reconnected automatically
 
-A recurring task schedules its next run after the current execution completes, so the same task never overlaps itself. A persistent task starts once and normally remains `running`; it does not consume the semaphore slots reserved for transient jobs.
+A recurring task schedules its next run after the current execution completes, so the same task never overlaps itself. A persistent task normally remains `running`; it does not consume the semaphore slots reserved for transient jobs.
 
 ## Status and Time
 
@@ -24,21 +25,33 @@ A recurring task schedules its next run after the current execution completes, s
 - `created_at`, `last_run`, and `next_run` use UTC
 - Scheduled tasks use the requested time and execute only once
 - One-time tasks retain their final status
-- Failed executions retry after one second until `max_retries` is exhausted
+- Failed executions use exponential backoff from 1 to 64 seconds until `max_retries` is exhausted
+- Persistent tasks reconnect without a retry limit; an unexpected successful return reconnects after one second
+- Every attempt creates a `task_executions` row before executor code runs and records its finish status and error
+
+Task definitions are stored in `scheduler_tasks`. On startup, tasks left in `pending` or `running` are restored after their executors have been registered. During graceful shutdown, queued tasks are not dispatched and remain pending for the next startup. Already-running finite tasks are allowed to finish, while Persistent executions are cancelled and their task definitions return to pending.
 
 ## Task Executor (TaskExecutor)
 Each task type requires an executor. Implement the `TaskExecutor` trait to define your own logic.
 
 ```rust
 use crate::scheduler::task_scheduler::{Task, TaskExecutor};
+use tokio_util::sync::CancellationToken;
 
 struct MyExecutor;
 
 #[async_trait::async_trait]
 impl TaskExecutor for MyExecutor {
-    async fn execute(&self, task: &Task) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn execute(
+        &self,
+        task: &Task,
+        cancellation: CancellationToken,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("Executing task: {}", task.name);
-        // Your business logic ...
+        tokio::select! {
+            result = run_connection() => result?,
+            () = cancellation.cancelled() => close_connection().await?,
+        }
         Ok(())
     }
     fn get_name(&self) -> &str {
@@ -54,8 +67,10 @@ impl TaskExecutor for MyExecutor {
 use crate::scheduler::task_scheduler::{TaskScheduler, MyExecutor};
 use std::sync::Arc;
 
-let scheduler = Arc::new(TaskScheduler::new(100)); // Max 100 concurrent tasks
+let scheduler = Arc::new(TaskScheduler::with_database(db.clone(), 100));
 scheduler.add_executor(Box::new(MyExecutor)).await;
+scheduler.restore_tasks().await?;
+scheduler.start().await;
 ```
 
 ## Adding Tasks
@@ -67,7 +82,7 @@ let task_id = scheduler.add_one_time_task(
     "my_executor".to_string(),
     None,
     Some(30), // Timeout 30s
-).await;
+).await?;
 
 // Recurring task
 let task_id = scheduler.add_recurring_task(
@@ -77,7 +92,7 @@ let task_id = scheduler.add_recurring_task(
     None,
     Some(20), // Timeout 20s
     3, // Max 3 retries
-).await;
+).await?;
 
 // Scheduled task
 use chrono::Utc;
@@ -87,14 +102,14 @@ let task_id = scheduler.add_scheduled_task(
     "my_executor".to_string(),
     None,
     Some(60),
-).await;
+).await?;
 
 // Persistent task
 let task_id = scheduler.add_persistent_task(
     "Persistent Task".to_string(),
     "my_executor".to_string(),
     None,
-).await;
+).await?;
 ```
 
 ## Start & Stop Scheduler
@@ -125,6 +140,7 @@ Scheduler endpoints require a Bearer token and the listed permission:
 
 - `GET /scheduler/tasks`: `scheduler:read`
 - `GET /scheduler/tasks/{id}`: `scheduler:read`
+- `GET /scheduler/tasks/{id}/executions`: `scheduler:read`
 - `POST /scheduler/tasks`: `scheduler:write`
 - `POST /scheduler/tasks/{id}/run`: `scheduler:write`
 - `DELETE /scheduler/tasks/{id}`: `scheduler:write`
@@ -132,13 +148,16 @@ Scheduler endpoints require a Bearer token and the listed permission:
 `task_type` accepts `one_time`, `recurring`, `scheduled`, or `persistent`. Recurring tasks require a positive `interval_seconds`; scheduled tasks require `next_run` as a UTC RFC 3339 timestamp. See the [API guide](api.md) for full request examples.
 
 ## Notes
-- `executor_type` must match the registered executor name
+- `executor_type` is validated when the task is created and must match a registered executor name
 - Scheduler is thread-safe (Arc+RwLock), can be shared across threads/tasks
 - Task data can use serde_json::Value for custom parameters
 - It is recommended that all task logic be idempotent to avoid side effects from retries
-- Persistent executors must be cancellation-safe so dropping their future releases connections and other resources
-- Task state is currently in memory and is not restored after a process restart
+- Persistent executors should observe the supplied `CancellationToken`, close their external connection, and return
+- `SIGINT` and `SIGTERM` stop new dispatches and wait for already-running OneTime, Scheduled, and Recurring executions to finish
+- Persistent executions receive cancellation and have a five-second grace period before force-abort
+- A finite task without `timeout_seconds` can therefore delay shutdown indefinitely; set a timeout when that is not acceptable
+- `TaskScheduler::new` remains available for in-memory tests; the server uses `with_database`
 - Use logging and tracing for troubleshooting
 
 ---
-Database-backed recovery and distributed scheduling can be added behind the task repository and executor boundaries.
+The scheduler is intended for one service instance. Distributed claiming and leases are still required before multiple instances can share the same scheduler tables safely.

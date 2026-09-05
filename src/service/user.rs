@@ -54,7 +54,7 @@ pub async fn register_user(
         "subject": "Successful registration",
         "body": "Welcome to register!",
     });
-    scheduler
+    let _ = scheduler
         .add_one_time_task(
             "User registration email".to_string(),
             "mail_sender".to_string(),

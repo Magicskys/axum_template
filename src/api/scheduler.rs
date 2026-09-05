@@ -61,6 +61,27 @@ async fn get_task_handler(
     Ok(Json(ApiResponse::ok(task.to_info())))
 }
 
+async fn list_task_executions_handler(
+    State(state): State<AppState>,
+    _permission: Required<SchedulerRead>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<Vec<crate::model::task_execution::Model>>>, ApiError> {
+    use sea_orm::EntityTrait;
+
+    let exists = crate::model::scheduler_task::Entity::find_by_id(&id)
+        .one(&state.db)
+        .await
+        .map_err(ApiError::internal)?
+        .is_some();
+    if !exists {
+        return Err(ApiError::not_found("scheduler task not found"));
+    }
+    let executions = crate::scheduler::store::list_executions(&state.db, &id)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(Json(ApiResponse::ok(executions)))
+}
+
 async fn create_task_handler(
     State(state): State<AppState>,
     _permission: Required<SchedulerWrite>,
@@ -124,7 +145,8 @@ async fn create_task_handler(
                 .add_persistent_task(payload.name, payload.executor_type, payload.data)
                 .await
         }
-    };
+    }
+    .map_err(ApiError::bad_request)?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({ "id": task_id }))))
 }
@@ -162,5 +184,6 @@ pub fn router() -> Router<AppState> {
             "/tasks/{id}",
             get(get_task_handler).delete(delete_task_handler),
         )
+        .route("/tasks/{id}/executions", get(list_task_executions_handler))
         .route("/tasks/{id}/run", post(run_task_handler))
 }
